@@ -125,6 +125,7 @@ backend/
 | Contraste insuficiente | Textos `gray-400`/`gray-500` sobre fondo `gray-50` | Escalados a `gray-600`/`gray-700`/`gray-900` en toda la app |
 | Next.js se caía solo | Sin gestor de procesos | Migrado a pm2 con `pm2 save` |
 | Gunicorn no recargaba cambios | Proceso daemon con código cacheado | `kill + restart` después de cada cambio Python |
+| GitHub bloqueó el push | API key de OpenAI hardcodeada en `settings.py` | Key movida a `backend/.env`, leída con `os.environ.get()` |
 
 ---
 
@@ -139,10 +140,31 @@ backend/
 | gpt-4o-mini | $0.15/1M | $0.60/1M |
 | **gpt-4.1-nano** | **$0.10/1M** | **$0.40/1M** |
 
-Configuración en `backend/backend/settings.py`:
+**Problema al hacer push:** GitHub bloqueó el commit porque la API key estaba hardcodeada en `settings.py`.
+
+**Solución — variables de entorno:**
+
+1. La key se movió a `backend/.env` (ignorado por git vía `.gitignore`)
+2. `settings.py` ahora lee la key desde el entorno:
 ```python
-OPENAI_API_KEY = '...'
+import os
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 OPENAI_MODEL = 'gpt-4.1-nano'
+```
+3. Gunicorn se arranca exportando las variables primero:
+```bash
+export $(cat ~/lab_milvus/backend/.env | xargs)
+gunicorn --chdir ~/lab_milvus/backend --bind 0.0.0.0:8001 backend.wsgi:application \
+  --workers 2 --daemon --pid /tmp/gunicorn.pid --log-file /tmp/gunicorn.log
+```
+
+**Archivos agregados al `.gitignore`:**
+```
+.env
+backend/.env
+backend/media/
+frontend/.env.local
+frontend/node_modules/
 ```
 
 ---
