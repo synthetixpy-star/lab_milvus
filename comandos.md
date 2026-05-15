@@ -110,11 +110,19 @@ docker restart milvus-standalone
 # Entra dentro del contenedor de Milvus en modo interactivo
 docker exec -it milvus-standalone bash
 
-# Levanta el contenedor de Attu UI (interfaz gráfica de Milvus)
+# Levanta el contenedor de Attu UI (interfaz gráfica de Milvus) — solo la primera vez
 docker run -d --name attu \
   -p 8000:3000 \
   -e MILVUS_URL=65.109.99.208:19530 \
   zilliz/attu:latest
+
+# Inicia Attu cuando el contenedor ya existe pero está apagado
+docker start attu
+
+# Secuencia completa para levantar todo cuando el servidor estuvo apagado
+docker compose up -d   # levanta etcd, minio y milvus-standalone
+docker start attu      # levanta la interfaz gráfica
+docker ps | grep -E "milvus|attu"  # verifica que todos estén corriendo
 ```
 
 ---
