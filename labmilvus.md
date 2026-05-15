@@ -28,7 +28,8 @@ pip install pymupdf langchain sentence-transformers numpy
 
 El modelo `all-MiniLM-L6-v2` se descarga automáticamente la primera vez que se usa. Pesa ~90MB y corre completamente local, sin necesidad de API externa.
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Resultado:** pymupdf, langchain, sentence-transformers, numpy instalados en `~/lab_milvus/venv`. Se requirió instalar `langchain-text-splitters` por separado ya que langchain 1.3.0 no lo incluye.
 
 ---
 
@@ -44,7 +45,9 @@ paginas = [page.get_text() for page in doc]
 print(f"{len(paginas)} páginas extraídas")
 ```
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Archivo usado:** `pdfs/output/ORD_10_2020.pdf` — Ordenanza Municipal de Asunción, Paraguay.
+**Resultado:** 3 páginas extraídas (3911, 3875 y 1147 caracteres respectivamente).
 
 ---
 
@@ -64,7 +67,8 @@ chunks = splitter.create_documents(paginas)
 print(f"{len(chunks)} chunks generados")
 ```
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Resultado:** 21 chunks generados con `chunk_size=500` y `chunk_overlap=50`. Se usó `langchain_text_splitters.RecursiveCharacterTextSplitter` (no `langchain.text_splitter` que está deprecado en langchain 1.3.0).
 
 ---
 
@@ -85,7 +89,8 @@ embeddings = modelo.encode(textos, show_progress_bar=True)
 print(f"Embeddings generados: {embeddings.shape}")
 ```
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Resultado:** 21 embeddings generados con forma `(21, 384)` — 21 chunks, cada uno convertido a un vector de 384 dimensiones. Modelo `all-MiniLM-L6-v2` descargado y ejecutado localmente sin API externa.
 
 ---
 
@@ -117,7 +122,8 @@ client.create_collection("pdf_collection", schema=schema)
 print("Colección creada OK")
 ```
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Resultado:** Colección `pdf_collection` creada en Milvus con campos: id (PK), vector (384 dims), texto, fuente y pagina.
 
 ---
 
@@ -143,7 +149,8 @@ client.insert("pdf_collection", datos)
 print(f"{len(datos)} chunks insertados en {time.time() - inicio:.2f}s")
 ```
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Resultado:** 21 chunks insertados en Milvus en 0.01s. Cada registro contiene su vector (384 dims), texto original, fuente `ORD_10_2020.pdf` y número de página. Datos visibles en Attu UI bajo `pdf_collection`.
 
 ---
 
@@ -165,7 +172,8 @@ client.load_collection("pdf_collection")
 print("Índice creado y colección cargada OK")
 ```
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Resultado:** Índice HNSW creado sobre el campo `vector` con métrica COSINE (M=16, efConstruction=200). Colección `pdf_collection` cargada en memoria RAM y lista para búsquedas.
 
 ---
 
@@ -199,7 +207,18 @@ Resultado 1 (score: 0.95): "El contrato vence el 31 de marzo de 2025..."
 Resultado 2 (score: 0.87): "La fecha límite acordada entre las partes..."
 ```
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Búsqueda realizada:** `"¿De qué trata el documento?"`
+**PDFs en colección:** ORD_10_2020.pdf, ORD_12_2018.pdf, ORD_11_2015.pdf (64 chunks totales)
+**Tiempo:** 0.0026s
+
+| # | Score | Fuente | Página | Texto |
+|---|-------|--------|--------|-------|
+| ⭐ 1 | **0.5460** | ORD_11_2015.pdf | 0 | el cual se somete a consideración de este cuerpo legislativo el Proyecto de reparación integral de veredas inclusivas para su correspondiente análisis, estudio y posterior aprobación... |
+| 2 | 0.5428 | ORD_12_2018.pdf | 0 | el cual se somete a consideración de este cuerpo legislativo el Proyecto de actualización de los valores fiscales inmobiliarios distritales para su correspondiente análisis... |
+| 3 | 0.5218 | ORD_12_2018.pdf | 0 | sobre el tránsito y la vida cotidiana de los vecinos sea el mínimo posible. Artículo 7°.- SANCIONAR con multas graves a las empresas contratistas y proveedores que incumplan... |
+| 4 | 0.5070 | ORD_11_2015.pdf | 0 | Artículo 6°.- CREAR una unidad de gestión de crisis y atención al ciudadano para canalizar las consultas y reclamos que pudieran surgir durante la ejecución de los trabajos en la vía pública... |
+| 5 | 0.5070 | ORD_10_2020.pdf | 0 | Artículo 6°.- CREAR una unidad de gestión de crisis y atención al ciudadano para canalizar las consultas y reclamos que pudieran surgir durante la ejecución de los trabajos en la vía pública... |
 
 ---
 
@@ -219,7 +238,17 @@ resultados_filtrados = client.search(
 print(f"{len(resultados_filtrados[0])} resultados filtrados por fuente")
 ```
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Búsqueda realizada:** `"¿De qué trata el documento?"` con filtro `fuente == "ORD_10_2020.pdf"`
+**Tiempo:** 0.0072s
+
+| # | Score | Fuente | Página | Texto |
+|---|-------|--------|--------|-------|
+| 1 | 0.5070 | ORD_10_2020.pdf | 0 | Artículo 6°.- CREAR una unidad de gestión de crisis y atención al ciudadano para canalizar las consultas y reclamos que pudieran surgir durante la ejecución de los trabajos en la vía pública... |
+| 2 | 0.4912 | ORD_10_2020.pdf | 0 | Artículo 10°.- COMUNÍQUESE a la Intendencia Municipal, publíquese en la Gaceta Municipal y archívese una vez cumplidos los trámites administrativos de rigor... |
+| ⭐ 3 | **0.4655** | ORD_10_2020.pdf | 0 | **mediante el cual se somete a consideración de este cuerpo legislativo el Proyecto de gestión integral y disposición final de residuos sólidos...** ← más relevante conceptualmente |
+| 4 | 0.4441 | ORD_10_2020.pdf | 0 | provengan de los rubros específicos de inversiones físicas, royalties de las entidades binacionales... |
+| 5 | 0.4426 | ORD_10_2020.pdf | 0 | Paraguay, otorga a las municipalidades la potestad de dictar sus propias normas para la gestión de sus intereses y la prestación de servicios públicos... |
 
 ---
 
@@ -239,7 +268,19 @@ print(f"Búsqueda semántica: OK")
 print(f"Búsqueda con filtro: OK")
 ```
 
-**Estado:** pendiente
+**Estado:** completado ✓
+**Resultado:**
+```
+=== REPORTE FINAL ===
+Total chunks en Milvus: 64
+Dimensión de embeddings: 384
+Modelo usado: all-MiniLM-L6-v2
+Índice: HNSW / Métrica: COSINE
+Búsqueda semántica: OK
+Búsqueda con filtro: OK
+PDFs cargados: ORD_10_2020.pdf, ORD_12_2018.pdf, ORD_11_2015.pdf
+```
+Nota: se requiere `client.flush('pdf_collection')` antes de `get_collection_stats` para obtener el conteo actualizado.
 
 ---
 
