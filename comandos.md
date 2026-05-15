@@ -1,4 +1,4 @@
-# Comandos utilizados — Lab Milvus
+# Comandos — Lab Milvus
 
 ---
 
@@ -56,14 +56,12 @@ mv README.md configuracion_milvus.md
 ## Firewall (UFW)
 
 ```bash
-# Abre el puerto 19530 para Milvus gRPC
-sudo ufw allow 19530/tcp
-
-# Abre el puerto 9091 para Milvus HTTP
-sudo ufw allow 9091/tcp
-
-# Abre el puerto 8000 para Attu UI
-sudo ufw allow 8000/tcp
+# Abre puertos necesarios para el sistema completo
+sudo ufw allow 19530/tcp   # Milvus gRPC (interno)
+sudo ufw allow 9091/tcp    # Milvus HTTP/métricas
+sudo ufw allow 8000/tcp    # Attu UI (panel de Milvus)
+sudo ufw allow 8001/tcp    # Django API (backend)
+sudo ufw allow 3000/tcp    # Next.js (frontend)
 
 # Muestra el estado detallado del firewall y reglas activas
 sudo ufw status verbose
@@ -71,7 +69,7 @@ sudo ufw status verbose
 
 ---
 
-## Docker
+## Docker y Milvus
 
 ```bash
 # Instala Docker usando el script oficial
@@ -83,19 +81,18 @@ sudo usermod -aG docker lucas
 # Aplica el nuevo grupo sin cerrar sesión
 newgrp docker
 
-# Verifica la versión instalada de Docker
+# Verifica las versiones instaladas
 docker --version
-
-# Verifica la versión instalada de Docker Compose
 docker compose version
 
 # Descarga el docker-compose oficial de Milvus Standalone v2.4.9
 wget https://github.com/milvus-io/milvus/releases/download/v2.4.9/milvus-standalone-docker-compose.yml -O docker-compose.yml
 
 # Levanta todos los contenedores de Milvus en segundo plano
+cd ~/lab_milvus
 docker compose up -d
 
-# Apaga y elimina todos los contenedores de Milvus
+# Apaga los contenedores (los datos se conservan en volumes/)
 docker compose down
 
 # Muestra el estado y salud de los contenedores
@@ -107,10 +104,7 @@ docker logs milvus-standalone --tail 50
 # Reinicia un contenedor específico
 docker restart milvus-standalone
 
-# Entra dentro del contenedor de Milvus en modo interactivo
-docker exec -it milvus-standalone bash
-
-# Levanta el contenedor de Attu UI (interfaz gráfica de Milvus) — solo la primera vez
+# Levanta el contenedor de Attu UI — solo la primera vez
 docker run -d --name attu \
   -p 8000:3000 \
   -e MILVUS_URL=65.109.99.208:19530 \
@@ -119,133 +113,263 @@ docker run -d --name attu \
 # Inicia Attu cuando el contenedor ya existe pero está apagado
 docker start attu
 
-# Secuencia completa para levantar todo cuando el servidor estuvo apagado
-docker compose up -d   # levanta etcd, minio y milvus-standalone
-docker start attu      # levanta la interfaz gráfica
-docker ps | grep -E "milvus|attu"  # verifica que todos estén corriendo
+# Secuencia completa para levantar todo desde cero
+docker compose up -d
+docker start attu
+docker compose ps
 ```
 
 ---
 
-## Python y pymilvus
+## Python y entorno virtual
 
 ```bash
 # Instala el paquete necesario para crear entornos virtuales
 sudo apt install python3.12-venv -y
 
-# Crea un entorno virtual Python en la carpeta venv
-python3 -m venv venv
+# Crea el entorno virtual en la carpeta venv
+python3 -m venv ~/lab_milvus/venv
 
-# Activa el entorno virtual
-source venv/bin/activate
+# Activa el entorno virtual (siempre antes de usar Python del proyecto)
+source ~/lab_milvus/venv/bin/activate
 
-# Instala el SDK de Milvus para Python
-pip install pymilvus
+# Desactiva el entorno virtual
+deactivate
 
-# Prueba la conexión a Milvus (API antigua)
-python3 -c "from pymilvus import connections; connections.connect(host='localhost', port='19530'); print('Conectado OK')"
+# Instala todas las dependencias del proyecto
+pip install pymilvus pymupdf langchain-text-splitters sentence-transformers numpy \
+            django djangorestframework django-cors-headers gunicorn openai
 
-# Crea un usuario en Milvus
-python3 -c "from pymilvus import connections, utility; connections.connect(host='localhost', port='19530', user='root', password='Milvus'); utility.create_user('USUARIO', 'CONTRASEÑA', using='default'); print('OK')"
+# Lista los paquetes instalados
+pip list
 
-# Lista todos los usuarios de Milvus
+# Prueba la conexión a Milvus
+python3 -c "from pymilvus import MilvusClient; c = MilvusClient(uri='http://localhost:19530', user='root', password='Milvus'); print('Conectado OK')"
+```
+
+---
+
+## Usuarios de Milvus
+
+```bash
+# Activa el entorno antes de ejecutar estos comandos
+source ~/lab_milvus/venv/bin/activate
+
+# Lista todos los usuarios
 python3 -c "from pymilvus import connections, utility; connections.connect(host='localhost', port='19530', user='root', password='Milvus'); print(utility.list_usernames())"
 
-# Elimina un usuario de Milvus
+# Crea un usuario
+python3 -c "from pymilvus import connections, utility; connections.connect(host='localhost', port='19530', user='root', password='Milvus'); utility.create_user('USUARIO', 'CONTRASEÑA', using='default'); print('OK')"
+
+# Elimina un usuario
 python3 -c "from pymilvus import connections, utility; connections.connect(host='localhost', port='19530', user='root', password='Milvus'); utility.delete_user('USUARIO', using='default'); print('OK')"
 ```
 
 ---
 
-## Lab Milvus — Búsqueda Semántica con PDFs
+## Backend Django (Gunicorn)
 
 ```bash
-# Instala las dependencias necesarias para el laboratorio
-pip install pymupdf langchain sentence-transformers numpy
+cd ~/lab_milvus
+source venv/bin/activate
 
-# Instala el splitter de texto (requerido en langchain 1.3.0+, ya no viene incluido)
-pip install langchain-text-splitters
+# Arrancar Django con Gunicorn (modo producción, daemon)
+gunicorn --chdir backend --bind 0.0.0.0:8001 backend.wsgi:application \
+  --workers 2 --daemon --pid /tmp/gunicorn.pid --log-file /tmp/gunicorn.log
+
+# Ver logs en tiempo real
+tail -f /tmp/gunicorn.log
+
+# Parar Gunicorn
+kill $(cat /tmp/gunicorn.pid)
+
+# Reiniciar Gunicorn (necesario después de cambios en el código Python)
+kill $(cat /tmp/gunicorn.pid) && sleep 1
+gunicorn --chdir ~/lab_milvus/backend --bind 0.0.0.0:8001 backend.wsgi:application \
+  --workers 2 --daemon --pid /tmp/gunicorn.pid --log-file /tmp/gunicorn.log
+
+# Ver el PID del proceso master
+cat /tmp/gunicorn.pid
+
+# Verificar que está respondiendo
+curl http://localhost:8001/api/stats/
+
+# Modo desarrollo (con recarga automática, no usar en producción)
+source ~/lab_milvus/venv/bin/activate
+python ~/lab_milvus/backend/manage.py runserver 8001
 ```
 
+---
+
+## Frontend Next.js (pm2)
+
+```bash
+# Instala nvm (Node Version Manager)
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+
+# Carga nvm en la sesión actual
+export NVM_DIR="$HOME/.nvm" && source "$NVM_DIR/nvm.sh"
+
+# Instala Node.js 20
+nvm install 20
+
+# Verifica las versiones
+node --version   # v20.20.2
+npm --version    # 10.8.2
+
+# Instala pm2 globalmente
+npm install -g pm2
+
+# Arrancar Next.js con pm2
+cd ~/lab_milvus/frontend
+pm2 start npm --name nextjs -- run dev -- -H 0.0.0.0 -p 3000
+
+# Ver estado de los procesos
+pm2 list
+
+# Ver logs en tiempo real
+pm2 logs nextjs
+
+# Parar Next.js
+pm2 stop nextjs
+
+# Reiniciar Next.js
+pm2 restart nextjs
+
+# Guardar la configuración (sobrevive reinicios del servidor)
+pm2 save
+
+# Restaurar procesos guardados después de un reinicio del servidor
+pm2 resurrect
+```
+
+---
+
+## Arranque completo del sistema
+
+Secuencia correcta cuando el servidor estuvo apagado:
+
+```bash
+# 1. Levantar Milvus (primero siempre)
+cd ~/lab_milvus
+docker compose up -d
+docker start attu
+
+# 2. Verificar que Milvus está healthy (~10 segundos)
+docker compose ps
+
+# 3. Levantar Django
+source ~/lab_milvus/venv/bin/activate
+gunicorn --chdir ~/lab_milvus/backend --bind 0.0.0.0:8001 backend.wsgi:application \
+  --workers 2 --daemon --pid /tmp/gunicorn.pid --log-file /tmp/gunicorn.log
+
+# 4. Levantar Next.js
+export NVM_DIR="$HOME/.nvm" && source "$NVM_DIR/nvm.sh"
+pm2 resurrect   # si ya fue guardado con pm2 save
+# o si es la primera vez:
+# cd ~/lab_milvus/frontend && pm2 start npm --name nextjs -- run dev -- -H 0.0.0.0 -p 3000
+
+# 5. Verificar todo
+docker compose ps
+curl -s http://localhost:8001/api/stats/
+pm2 list
+```
+
+---
+
+## Parada completa del sistema
+
+```bash
+# Parar Next.js
+pm2 stop nextjs
+
+# Parar Django
+kill $(cat /tmp/gunicorn.pid)
+
+# Parar Milvus
+cd ~/lab_milvus && docker compose down
+```
+
+---
+
+## API REST — ejemplos con curl
+
+```bash
+# Estado general del sistema
+curl http://localhost:8001/api/stats/
+
+# Listar documentos indexados
+curl http://localhost:8001/api/documents/
+
+# Subir un PDF
+curl -X POST http://localhost:8001/api/documents/upload/ \
+  -F "file=@/ruta/al/archivo.pdf"
+
+# Ver chunks de un documento
+curl http://localhost:8001/api/documents/ORD_10_2020.pdf/chunks/
+
+# Eliminar un documento
+curl -X DELETE http://localhost:8001/api/documents/ORD_10_2020.pdf/
+
+# Búsqueda semántica en todos los documentos
+curl -X POST http://localhost:8001/api/search/ \
+  -H "Content-Type: application/json" \
+  -d '{"query": "gestión de residuos sólidos", "limit": 5}'
+
+# Búsqueda filtrada por documento específico
+curl -X POST http://localhost:8001/api/search/ \
+  -H "Content-Type: application/json" \
+  -d '{"query": "sanciones", "fuente": "ORD_10_2020.pdf", "limit": 3}'
+
+# Chat con RAG (requiere API key de OpenAI configurada)
+curl -X POST http://localhost:8001/api/chat/ \
+  -H "Content-Type: application/json" \
+  -d '{"mensaje": "¿Qué sanciones establece la ordenanza?", "historial": []}'
+
+# Chat con historial de conversación
+curl -X POST http://localhost:8001/api/chat/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mensaje": "¿Y cuál es el plazo para implementarlas?",
+    "historial": [
+      {"role": "user", "content": "¿Qué sanciones establece la ordenanza?"},
+      {"role": "assistant", "content": "La ordenanza establece multas graves..."}
+    ]
+  }'
+```
+
+---
+
+## Milvus — operaciones con Python
+
 ```python
-# Abre un PDF y extrae el texto de cada página
-import fitz
-doc = fitz.open("pdfs/output/ORD_10_2020.pdf")
-paginas = [page.get_text() for page in doc]
-print(f"{doc.page_count} páginas extraídas")
+from pymilvus import MilvusClient, DataType
 
-# Divide el texto en chunks de 500 caracteres con 50 de overlap
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-chunks = splitter.create_documents(paginas)
-textos = [c.page_content for c in chunks]
+client = MilvusClient(uri="http://localhost:19530", user="root", password="Milvus")
 
-# Convierte los chunks en vectores de 384 dimensiones (corre 100% local)
+# Listar colecciones
+client.list_collections()
+
+# Estadísticas de la colección
+client.flush("pdf_collection")
+client.get_collection_stats("pdf_collection")
+
+# Eliminar una colección completa
+client.drop_collection("pdf_collection")
+
+# Buscar en Milvus directamente
 from sentence_transformers import SentenceTransformer
 modelo = SentenceTransformer("all-MiniLM-L6-v2")
-embeddings = modelo.encode(textos, show_progress_bar=True)
+embedding = modelo.encode(["¿De qué trata el documento?"])
 
-# Crea la colección pdf_collection en Milvus con su esquema
-from pymilvus import MilvusClient, DataType
-client = MilvusClient(uri="http://localhost:19530", user="root", password="Milvus")
-schema = client.create_schema(auto_id=True, enable_dynamic_field=False)
-schema.add_field("id", DataType.INT64, is_primary=True)
-schema.add_field("vector", DataType.FLOAT_VECTOR, dim=384)
-schema.add_field("texto", DataType.VARCHAR, max_length=2000)
-schema.add_field("fuente", DataType.VARCHAR, max_length=500)
-schema.add_field("pagina", DataType.INT64)
-client.create_collection("pdf_collection", schema=schema)
-
-# Inserta los chunks con sus embeddings en Milvus
-datos = [
-    {
-        "vector": embeddings[i].tolist(),
-        "texto": textos[i],
-        "fuente": "ORD_10_2020.pdf",
-        "pagina": chunks[i].metadata.get("page", 0)
-    }
-    for i in range(len(textos))
-]
-client.insert("pdf_collection", datos)
-
-# Crea un índice HNSW con métrica COSINE para búsqueda semántica eficiente
-index_params = client.prepare_index_params()
-index_params.add_index(
-    field_name="vector",
-    index_type="HNSW",
-    metric_type="COSINE",
-    params={"M": 16, "efConstruction": 200}
-)
-client.create_index("pdf_collection", index_params)
-
-# Carga la colección en memoria RAM para habilitar las búsquedas
-client.load_collection("pdf_collection")
-
-# Busca los 5 chunks más similares a una pregunta en todos los PDFs
-query_embedding = modelo.encode(["¿De qué trata el documento?"])
 resultados = client.search(
     collection_name="pdf_collection",
-    data=query_embedding.tolist(),
+    data=embedding.tolist(),
     limit=5,
     output_fields=["texto", "fuente", "pagina"]
 )
-
-# Busca solo dentro de un PDF específico usando filtro por fuente
-resultados_filtrados = client.search(
-    collection_name="pdf_collection",
-    data=query_embedding.tolist(),
-    limit=5,
-    filter='fuente == "ORD_10_2020.pdf"',
-    output_fields=["texto", "fuente", "pagina"]
-)
-
-# Fuerza el guardado en disco y obtiene el conteo real de registros
-client.flush("pdf_collection")
-stats = client.get_collection_stats("pdf_collection")
-print(f"Total chunks: {stats['row_count']}")
-
-# Asigna rol admin a un usuario de Milvus
-client.grant_role(user_name="lucas", role_name="admin")
+for r in resultados[0]:
+    print(f"Score: {r['distance']:.4f} | {r['entity']['fuente']} | {r['entity']['texto'][:100]}")
 ```
 
 ---
@@ -253,33 +377,36 @@ client.grant_role(user_name="lucas", role_name="admin")
 ## Git y GitHub
 
 ```bash
-# Inicializa un repositorio git en la carpeta actual
+# Inicializa el repositorio
 git init
-
-# Cambia el nombre de la rama principal a main
 git branch -m main
+git remote add origin git@github.com:synthetixpy-star/lab_milvus.git
 
-# Agrega el repositorio remoto de GitHub
-git remote add origin https://github.com/synthetixpy-star/lab_milvus.git
-
-# Cambia la URL del remoto (para usar token o SSH)
-git remote set-url origin git@github.com:synthetixpy-star/lab_milvus.git
-
-# Configura el nombre de usuario de git
+# Configura el usuario
 git config --global user.name "synthetixpy-star"
-
-# Configura el email de git
 git config --global user.email "synthetixpy@gmail.com"
 
-# Agrega archivos al staging para el commit
-git add configuracion_milvus.md labmilvus.md docker-compose.yml comandos.md
-
-# Crea un commit con un mensaje
-git commit -m "mensaje del commit"
-
-# Sube los cambios a GitHub
+# Flujo normal de trabajo
+git status
+git add archivo1.md archivo2.py
+git commit -m "descripción del cambio"
 git push -u origin main
 
-# Muestra el estado actual del repositorio
-git status
+# Ver historial de commits
+git log --oneline
 ```
+
+---
+
+## URLs del sistema
+
+| Servicio | URL |
+|----------|-----|
+| Frontend (Next.js) | http://65.109.99.208:3000 |
+| Dashboard | http://65.109.99.208:3000 |
+| Búsqueda semántica | http://65.109.99.208:3000/search |
+| Subir PDF | http://65.109.99.208:3000/upload |
+| Chat IA | http://65.109.99.208:3000/chat |
+| API Django | http://65.109.99.208:8001/api/ |
+| Attu UI (Milvus) | http://65.109.99.208:8000 |
+| MinIO consola | http://65.109.99.208:9001 |

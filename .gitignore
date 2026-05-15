@@ -3,3 +3,8 @@ venv/
 volumes/
 __pycache__/
 *.pyc
+.env
+backend/.env
+backend/media/
+frontend/.env.local
+frontend/node_modules/
