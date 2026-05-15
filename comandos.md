@@ -169,12 +169,17 @@ python3 -c "from pymilvus import connections, utility; connections.connect(host=
 
 ## Backend Django (Gunicorn)
 
+> La API key de OpenAI se lee desde `backend/.env` — hay que exportarla antes de arrancar.
+
 ```bash
 cd ~/lab_milvus
 source venv/bin/activate
 
+# Cargar la API key de OpenAI desde el archivo .env
+export $(cat ~/lab_milvus/backend/.env | xargs)
+
 # Arrancar Django con Gunicorn (modo producción, daemon)
-gunicorn --chdir backend --bind 0.0.0.0:8001 backend.wsgi:application \
+gunicorn --chdir ~/lab_milvus/backend --bind 0.0.0.0:8001 backend.wsgi:application \
   --workers 2 --daemon --pid /tmp/gunicorn.pid --log-file /tmp/gunicorn.log
 
 # Ver logs en tiempo real
@@ -185,6 +190,7 @@ kill $(cat /tmp/gunicorn.pid)
 
 # Reiniciar Gunicorn (necesario después de cambios en el código Python)
 kill $(cat /tmp/gunicorn.pid) && sleep 1
+export $(cat ~/lab_milvus/backend/.env | xargs)
 gunicorn --chdir ~/lab_milvus/backend --bind 0.0.0.0:8001 backend.wsgi:application \
   --workers 2 --daemon --pid /tmp/gunicorn.pid --log-file /tmp/gunicorn.log
 
@@ -196,6 +202,7 @@ curl http://localhost:8001/api/stats/
 
 # Modo desarrollo (con recarga automática, no usar en producción)
 source ~/lab_milvus/venv/bin/activate
+export $(cat ~/lab_milvus/backend/.env | xargs)
 python ~/lab_milvus/backend/manage.py runserver 8001
 ```
 
@@ -260,6 +267,7 @@ docker compose ps
 
 # 3. Levantar Django
 source ~/lab_milvus/venv/bin/activate
+export $(cat ~/lab_milvus/backend/.env | xargs)
 gunicorn --chdir ~/lab_milvus/backend --bind 0.0.0.0:8001 backend.wsgi:application \
   --workers 2 --daemon --pid /tmp/gunicorn.pid --log-file /tmp/gunicorn.log
 
